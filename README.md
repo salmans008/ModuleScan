@@ -1,27 +1,21 @@
-# ModuleScan Free OCR v8.1
+# ModuleScan — PaddleOCR v9
 
-This build fixes the missing technical error panel: OCR diagnostics now appear directly below the Extract Data section, even when OCR fails before the Review Extracted Data card opens.
+Free browser-based OCR for module schedule photos.
 
-# ModuleScan v8 — PaddleOCR main-thread diagnostic build
+## v9 fix
+The previous build failed during PaddleOCR runtime initialization on iPhone Safari with:
 
-This version changes OCR startup to the simplest official PaddleOCR browser flow:
+`TypeError: Load failed`
 
-- main-thread OCR (no Worker)
-- `ortOptions: { backend: "auto" }`
-- direct `File` input to `ocr.predict()`
-- full on-screen technical diagnostics if initialization or OCR fails
+This version:
+- forces ONNX Runtime WebAssembly backend
+- uses an explicit jsDelivr WASM path
+- uses one thread for mobile compatibility
+- disables SIMD for broader iPhone compatibility
+- keeps PaddleOCR and the existing position-based table parser
+- keeps Qty ignored
+- keeps Tower No. and Level extraction
+- keeps full on-screen diagnostics
 
 ## Deploy
-Replace the repository files with this package and commit to `main`. Vercel should redeploy automatically.
-
-## Test
-1. Open the Vercel site on iPhone.
-2. Choose a JPG or PNG schedule photo.
-3. Tap **Extract Data**.
-4. If it fails, take a screenshot of the **Technical Error Details** box.
-
-The app still keeps:
-- position-based table parsing
-- Qty ignored
-- Tower No. and Level fields
-- local database and CSV export
+Replace all repository files with this package, commit to `main`, and let Vercel redeploy.

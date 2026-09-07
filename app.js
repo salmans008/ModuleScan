@@ -390,15 +390,24 @@ $('#extractBtn').onclick=async()=>{
 
   try{
     stage='PaddleOCR runtime initialization';
+    $('#ocrStatus').textContent='Loading the PaddleOCR browser runtime...';
+    $('#progressText').textContent='Loading OCR runtime and model...';
     $('#progressBar').style.width='20%';
     $('#progressText').textContent='Starting PaddleOCR engine...';
 
     // v8: simplest official browser configuration.
     // No Worker, no custom WASM path, and direct File input.
+    // v9: Explicit WASM runtime configuration for iPhone Safari.
+    // Avoid automatic backend selection, which was failing with "Load failed".
     ocr=await PaddleOCR.create({
       lang:'en',
       ocrVersion:'PP-OCRv5',
-      ortOptions:{ backend:'auto' }
+      ortOptions:{
+        backend:'wasm',
+        wasmPaths:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/',
+        numThreads:1,
+        simd:false
+      }
     });
 
     stage='OCR prediction';
@@ -463,6 +472,8 @@ $('#extractBtn').onclick=async()=>{
     $('#ocrStatus').textContent=`AI OCR failed during ${stage}. The full technical error is shown below.`;
     $('#rawText').textContent=`Technical error at ${stage}:\n\n${detail}`;
     showDiagnostic(stage,err);
+    const hint=$('#diagnosticHint');
+    if(hint) hint.textContent='This version uses an explicit WASM runtime path. If it still fails, send this complete error message.';
     toast('AI OCR failed. Full technical error is now displayed.');
   }finally{
     try{ocr?.dispose?.()}catch(e){}
