@@ -292,6 +292,47 @@ $('#removePhoto').onclick=()=>{
   $('#dropzone').classList.remove('hidden');
   $('#ocrStatus').textContent='Upload a photo, then tap Extract Data.';
 };
+
+async function prepareImageForOcr(file){
+  // Improve small table text before OCR: upscale moderately, grayscale and
+  // increase contrast. If Safari cannot decode the format, return the original file.
+  try{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.decoding='async';
+    await new Promise((resolve,reject)=>{
+      img.onload=resolve;
+      img.onerror=reject;
+      img.src=url;
+    });
+
+    const maxW=2400;
+    const scale=Math.min(2, Math.max(1, maxW/img.naturalWidth));
+    const w=Math.round(img.naturalWidth*scale);
+    const h=Math.round(img.naturalHeight*scale);
+    const canvas=document.createElement('canvas');
+    canvas.width=w;
+    canvas.height=h;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});
+    ctx.drawImage(img,0,0,w,h);
+
+    // Gentle grayscale + contrast enhancement for printed schedule text.
+    const imageData=ctx.getImageData(0,0,w,h);
+    const d=imageData.data;
+    for(let i=0;i<d.length;i+=4){
+      const gray=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+      const contrast=Math.max(0,Math.min(255,(gray-128)*1.35+128));
+      d[i]=d[i+1]=d[i+2]=contrast;
+    }
+    ctx.putImageData(imageData,0,0);
+    URL.revokeObjectURL(url);
+    return canvas;
+  }catch(err){
+    console.warn('Preprocessing skipped; using original file.',err);
+    return file;
+  }
+}
+
 $('#extractBtn').onclick=async()=>{
   const file=$('#photoInput').files[0];
   if(!file){toast('Please upload a photo first');return}
@@ -307,25 +348,35 @@ $('#extractBtn').onclick=async()=>{
     $('#progressBar').style.width='20%';
     $('#progressText').textContent='Loading OCR model...';
 
-    // Use the official browser SDK's default automatic backend selection.
-    // This is more compatible with Safari/iPhone than forcing a specific WASM path.
+    // Use PaddleOCR's dedicated Worker mode and an explicit ONNX Runtime WASM
+    // location. This avoids relying on Vite/Vercel asset rewriting on iPhone Safari.
     ocr=await PaddleOCR.create({
       lang:'en',
       ocrVersion:'PP-OCRv5',
+      worker:true,
       ortOptions:{
-        backend:'auto'
+        backend:'wasm',
+        wasmPaths:'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/',
+        numThreads:1,
+        simd:true
       }
     });
 
     $('#progressBar').style.width='55%';
     $('#progressText').textContent='Reading table positions and text...';
 
-    // Pass the original uploaded File directly to PaddleOCR.
-    // This follows the official browser quick-start path and avoids
-    // iPhone canvas / ImageBitmap compatibility problems.
-    const [result]=await ocr.predict(file,{
-      textDetLimitSideLen:2000,
-      textRecScoreThresh:0.15
+    $('#progressBar').style.width='42%';
+    $('#progressText').textContent='Enhancing small table text...';
+    const ocrImage=await prepareImageForOcr(file);
+
+    // Run OCR on the enhanced image. If preprocessing was unsupported,
+    // prepareImageForOcr returns the original File automatically.
+    const [result]=await ocr.predict(ocrImage,{
+      textDetLimitSideLen:2400,
+      textDetThresh:0.25,
+      textDetBoxThresh:0.35,
+      textDetUnclipRatio:1.6,
+      textRecScoreThresh:0.10
     });
 
     const items=result?.items||[];
