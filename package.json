@@ -1,6 +1,6 @@
 {
   "name": "modulescan",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@paddleocr/paddleocr-js": "0.4.2"
+    "tesseract.js": "^5.1.1"
   },
   "devDependencies": {
     "vite": "^7.0.0"

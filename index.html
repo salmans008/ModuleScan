@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ModuleScan | Free AI OCR</title>
+<title>ModuleScan | Free Free OCR</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,12 +15,12 @@
       <button class="nav" data-page="database">▦ <span>Module Database</span></button>
       <button class="nav" data-page="export">⇩ <span>Export Data</span></button>
     </nav>
-    <div class="sidebar-footer">Module Tracking System<br><small>Free AI OCR Edition</small></div>
+    <div class="sidebar-footer">Module Tracking System<br><small>Free Free OCR Edition</small></div>
   </aside>
   <main>
     <header>
       <div><h1 id="pageTitle">Upload & Extract</h1><p id="pageSubtitle">Upload a module schedule photo and automatically read it using free OCR.</p></div>
-      <div class="badge">● Free AI OCR Ready</div>
+      <div class="badge">● Free Browser OCR Ready</div>
     </header>
 
     <section id="upload" class="page active-page">
@@ -41,8 +41,8 @@
           </div>
         </div>
         <div class="card workflow">
-          <h2>Free AI extraction</h2>
-          <div class="step"><b>1</b><div><strong>Read table</strong><span>AI OCR reads text positions and structure directly in your browser.</span></div></div>
+          <h2>Free OCR extraction</h2>
+          <div class="step"><b>1</b><div><strong>Read table</strong><span>Free OCR reads text positions and structure directly in your browser.</span></div></div>
           <div class="step"><b>2</b><div><strong>Ignore Qty</strong><span>The Qty column is not saved.</span></div></div>
           <div class="step"><b>3</b><div><strong>Parse Tag</strong><span>Tower No. and Level are detected from each uploaded schedule.</span></div></div>
           <div class="step"><b>4</b><div><strong>Review & Save</strong><span>Always check the result before saving.</span></div></div>
@@ -56,14 +56,17 @@
           <div class="progress-wrap hidden" id="progressWrap"><div class="progress"><div id="progressBar"></div></div><span id="progressText">Preparing OCR...</span></div>
         </div>
         <button class="primary" id="extractBtn">Extract Data →</button>
-      </div>
 
+        <!-- Always-visible location for OCR diagnostics. This is intentionally
+             outside Review Extracted Data so errors are visible even when OCR
+             fails before the review card is opened. -->
         <div id="diagnosticBox" class="diagnostic-box hidden">
-          <h3>Technical Error Details</h3><p id="diagnosticHint" class="muted"></p>
+          <h3>Technical Error Details</h3>
           <p class="muted">If OCR fails, copy this information or send a screenshot.</p>
           <pre id="diagnosticText"></pre>
           <button id="copyDiagnostic" class="secondary">Copy Technical Error</button>
         </div>
+      </div>
 
       <div class="card hidden" id="reviewCard">
         <div class="section-head">

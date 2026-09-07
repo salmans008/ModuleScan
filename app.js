@@ -1,4 +1,4 @@
-import { PaddleOCR } from "@paddleocr/paddleocr-js";
+import { createWorker, PSM } from "tesseract.js";
 
 const state={draft:[],db:JSON.parse(localStorage.getItem('moduleScanDb')||'[]')};
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
@@ -373,6 +373,45 @@ $('#copyDiagnostic').onclick=async()=>{
   }
 };
 
+function ocrWordToItem(word){
+  const b=word?.bbox||{};
+  const x0=Number(b.x0||0), x1=Number(b.x1||x0);
+  const y0=Number(b.y0||0), y1=Number(b.y1||y0);
+  return {
+    text:(word?.text||'').trim(),
+    score:Number(word?.confidence||0)/100,
+    poly:[[x0,y0],[x1,y0],[x1,y1],[x0,y1]]
+  };
+}
+
+function cleanTagForOcr(tag){
+  // Correct only in code-like contexts so module descriptions are not altered.
+  let s=(tag||'').toUpperCase().replace(/[—–_]/g,'-');
+  s=s.replace(/([A-Z])\s+([0-9])/g,'$1$2');
+  s=s.replace(/([0-9])\s+([A-Z])/g,'$1$2');
+
+  // Common OCR confusion inside tower/level codes.
+  s=s.replace(/\bA\s*([ODQ])\s*(\d{1,2})/g,(_,c,n)=>'A0'+n);
+  s=s.replace(/\bL\s*([0-9])([OBD])([0-9]?)/g,(_,a,b,c)=>'L'+a+(b==='B'?'8':'0')+(c||''));
+  s=s.replace(/\bA\s*(\d{1,3})\b/g,(_,n)=>'A'+n.padStart(2,'0'));
+  s=s.replace(/\bL\s*([0-9OBD]{1,3})\b/g,(_,n)=>'L'+n.replace(/[OD]/g,'0').replace(/B/g,'8'));
+  return normalizeTag(s);
+}
+
+function improveExtractedRows(rows){
+  return rows.map(r=>{
+    let tag=cleanTagForOcr(r.tag);
+    const p=parseTag(tag);
+    return {
+      ...r,
+      module:(r.module||'').replace(/\bP0DFCU\b/gi,'PODFCU').replace(/\bP0\b/g,'PO').trim(),
+      tag,
+      towerNo:p.towerNo||r.towerNo||'',
+      level:p.level||r.level||''
+    };
+  });
+}
+
 $('#extractBtn').onclick=async()=>{
   const file=$('#photoInput').files[0];
   if(!file){toast('Please upload a photo first');return}
@@ -382,67 +421,70 @@ $('#extractBtn').onclick=async()=>{
   clearDiagnostic();
   $('#progressWrap').classList.remove('hidden');
   $('#progressBar').style.width='8%';
-  $('#progressText').textContent='Checking the selected photo...';
-  $('#ocrStatus').textContent='Preparing free AI OCR in your browser.';
+  $('#progressText').textContent='Preparing image for OCR...';
+  $('#ocrStatus').textContent='Preparing free browser OCR.';
 
-  let ocr=null;
+  let worker=null;
   let stage='photo preparation';
 
   try{
-    stage='PaddleOCR runtime initialization';
-    $('#ocrStatus').textContent='Loading the PaddleOCR browser runtime...';
-    $('#progressText').textContent='Loading OCR runtime and model...';
-    $('#progressBar').style.width='20%';
-    $('#progressText').textContent='Starting PaddleOCR engine...';
+    stage='image preprocessing';
+    const prepared=await prepareImageForOcr(file);
 
-    // v8: simplest official browser configuration.
-    // No Worker, no custom WASM path, and direct File input.
-    // v9: Explicit WASM runtime configuration for iPhone Safari.
-    // Avoid automatic backend selection, which was failing with "Load failed".
-    ocr=await PaddleOCR.create({
-      lang:'en',
-      ocrVersion:'PP-OCRv5',
-      ortOptions:{
-        backend:'wasm',
-        wasmPaths:'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/',
-        numThreads:1,
-        simd:false
+    stage='Tesseract.js initialization';
+    $('#progressBar').style.width='20%';
+    $('#progressText').textContent='Starting free OCR engine...';
+
+    worker=await createWorker('eng', 1, {
+      logger:m=>{
+        if(m?.status==='recognizing text' && Number.isFinite(m.progress)){
+          const pct=Math.round(30 + m.progress*50);
+          $('#progressBar').style.width=`${pct}%`;
+          $('#progressText').textContent=`Reading schedule text... ${Math.round(m.progress*100)}%`;
+        }
       }
     });
 
-    stage='OCR prediction';
-    $('#progressBar').style.width='55%';
+    // Sparse text mode works better for photographed tables where cells contain
+    // uneven spacing and small text.
+    try{
+      await worker.setParameters({
+        tessedit_pageseg_mode: String(PSM.SPARSE_TEXT),
+        preserve_interword_spaces: '1'
+      });
+    }catch(e){
+      console.warn('Tesseract parameters fallback:',e);
+    }
+
+    stage='Tesseract OCR recognition';
+    $('#progressBar').style.width='35%';
     $('#progressText').textContent='Reading table text and positions...';
 
-    // Direct File input is supported by PaddleOCR.js and avoids another
-    // canvas/format conversion step that can fail on iPhone Safari.
-    const [result]=await ocr.predict(file,{
-      textDetLimitSideLen:2400,
-      textDetThresh:0.25,
-      textDetBoxThresh:0.35,
-      textDetUnclipRatio:1.6,
-      textRecScoreThresh:0.10
-    });
+    const { data }=await worker.recognize(prepared);
+    const words=(data?.words||[]).filter(w=>(w.text||'').trim());
+    const items=words.map(ocrWordToItem);
 
     stage='OCR result parsing';
-    $('#progressBar').style.width='82%';
+    $('#progressBar').style.width='88%';
     $('#progressText').textContent='Building module rows...';
 
-    const items=result?.items||[];
     const raw=items.map(it=>{
       const b=itemBox(it);
       return `${it.text}   [x:${Math.round(b.cx)}, y:${Math.round(b.cy)}, score:${Math.round((it.score||0)*100)}%]`;
     }).join('\n');
 
-    $('#rawText').textContent=raw||'No text detected.';
-    state.draft=parsePositionedOcr(items, result?.image?.width || 1);
+    $('#rawText').textContent=raw || data?.text || 'No text detected.';
+
+    const imageWidth=(prepared?.width || prepared?.naturalWidth || data?.image?.width || 1);
+    state.draft=parsePositionedOcr(items,imageWidth);
 
     if(!state.draft.length){
-      const plain=items.map(x=>x.text).join('\n');
-      state.draft=parseOcr(plain);
+      state.draft=parseOcr(data?.text||items.map(x=>x.text).join('\n'));
     }
 
-    const plainText=items.map(x=>x.text).join(' ');
+    state.draft=improveExtractedRows(state.draft);
+
+    const plainText=(data?.text||items.map(x=>x.text).join(' '));
     const scheduleInfo=inferScheduleInfo(plainText,state.draft);
     setScheduleInfo(scheduleInfo);
 
@@ -455,30 +497,26 @@ $('#extractBtn').onclick=async()=>{
     }
 
     if(!state.draft.length){
-      toast('AI OCR completed, but no table rows were identified. Try a straighter, clearer photo.');
+      toast('OCR completed, but no table rows were identified. Try a straighter, clearer photo.');
       state.draft=[{sl:'1',module:'',tag:'',towerNo:'',level:'',tower:''}];
     }else{
-      toast(`AI OCR found ${state.draft.length} row(s). Please review before saving.`);
+      toast(`Free OCR found ${state.draft.length} row(s). Please review before saving.`);
     }
 
     $('#progressBar').style.width='100%';
     renderDraft();
     $('#reviewCard').classList.remove('hidden');
-    $('#reviewCard').scrollIntoView({behavior:'smooth'});
-    $('#ocrStatus').textContent='AI OCR completed. Review the extracted data below.';
+    $('#reviewCard').scrollIntoView({behavior:'smooth',block:'start'});
+    $('#ocrStatus').textContent='Free OCR completed. Review and correct the extracted data below.';
   }catch(err){
-    console.error(`ModuleScan AI OCR error at ${stage}:`,err);
+    console.error(`ModuleScan OCR error at ${stage}:`,err);
     const detail=errorToText(err);
-    $('#ocrStatus').textContent=`AI OCR failed during ${stage}. The full technical error is shown below.`;
+    $('#ocrStatus').textContent=`Free OCR failed during ${stage}. The full technical error is shown below.`;
     $('#rawText').textContent=`Technical error at ${stage}:\n\n${detail}`;
     showDiagnostic(stage,err);
-    const diagnosticBox=$('#diagnosticBox');
-    if(diagnosticBox) diagnosticBox.scrollIntoView({behavior:'smooth',block:'center'});
-    const hint=$('#diagnosticHint');
-    if(hint) hint.textContent='This version uses an explicit WASM runtime path. If it still fails, send this complete error message.';
-    toast('AI OCR failed. Full technical error is now displayed.');
+    toast('Free OCR failed. Full technical error is now displayed.');
   }finally{
-    try{ocr?.dispose?.()}catch(e){}
+    try{await worker?.terminate?.()}catch(e){}
     btn.disabled=false;
     setTimeout(()=>$('#progressWrap').classList.add('hidden'),500);
   }
