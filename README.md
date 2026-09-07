@@ -1,12 +1,23 @@
-# ModuleScan — PaddleOCR v7
+# ModuleScan v8 — PaddleOCR main-thread diagnostic build
 
-Free browser-based OCR for module schedules.
+This version changes OCR startup to the simplest official PaddleOCR browser flow:
 
-## v7 changes
-- Keeps PaddleOCR instead of switching back to plain Tesseract.js.
-- Uses PaddleOCR Worker mode.
-- Explicitly loads ONNX Runtime WASM from the official jsDelivr package path.
-- Uses a single WASM thread for better iPhone Safari compatibility.
-- Preprocesses schedule images with moderate upscaling, grayscale conversion and contrast enhancement before OCR.
-- Keeps the existing position-based table parser and ignores Qty.
-- Extracts Tower No. (for example A02) and Level (for example L38) from the schedule/tag structure.
+- main-thread OCR (no Worker)
+- `ortOptions: { backend: "auto" }`
+- direct `File` input to `ocr.predict()`
+- full on-screen technical diagnostics if initialization or OCR fails
+
+## Deploy
+Replace the repository files with this package and commit to `main`. Vercel should redeploy automatically.
+
+## Test
+1. Open the Vercel site on iPhone.
+2. Choose a JPG or PNG schedule photo.
+3. Tap **Extract Data**.
+4. If it fails, take a screenshot of the **Technical Error Details** box.
+
+The app still keeps:
+- position-based table parsing
+- Qty ignored
+- Tower No. and Level fields
+- local database and CSV export

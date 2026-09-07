@@ -86,6 +86,12 @@
             <tbody></tbody>
           </table>
         </div>
+        <div id="diagnosticBox" class="diagnostic-box hidden">
+          <h3>Technical Error Details</h3>
+          <p class="muted">If OCR fails, copy this information or send a screenshot.</p>
+          <pre id="diagnosticText"></pre>
+          <button id="copyDiagnostic" class="secondary">Copy Technical Error</button>
+        </div>
         <details class="ocr-details"><summary>Show raw OCR text</summary><pre id="rawText"></pre></details>
         <div class="actions"><button class="secondary" id="clearDraft">Clear</button><button class="primary" id="saveBtn">Save to Database</button></div>
       </div>

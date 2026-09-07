@@ -3,3 +3,7 @@
 .schedule-info label{display:block;font-size:12px;color:#6d7585;margin-bottom:6px;font-weight:700}
 .schedule-info input{width:100%;padding:11px;border:1px solid #dfe4ec;border-radius:9px;background:#fff}
 .schedule-info .primary{white-space:nowrap}
+
+.diagnostic-box{margin-top:18px;padding:18px;border:1px solid #d7b2b2;border-radius:16px;background:#fff7f7}
+.diagnostic-box h3{margin:0 0 8px}
+.diagnostic-box pre{max-height:340px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#151c2b;color:#f4f6fb;padding:14px;border-radius:12px;font-size:12px;line-height:1.45}

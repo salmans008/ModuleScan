@@ -333,45 +333,81 @@ async function prepareImageForOcr(file){
   }
 }
 
+function errorToText(err){
+  if(!err) return 'Unknown error';
+  const parts=[];
+  if(err.name) parts.push(`Name: ${err.name}`);
+  if(err.message) parts.push(`Message: ${err.message}`);
+  if(err.stack) parts.push(`Stack:\n${err.stack}`);
+  try{
+    const extra=JSON.stringify(err,Object.getOwnPropertyNames(err),2);
+    if(extra && extra!=='{}') parts.push(`Details:\n${extra}`);
+  }catch(e){}
+  return parts.join('\n\n') || String(err);
+}
+function showDiagnostic(stage, err){
+  const box=$('#diagnosticBox');
+  const text=$('#diagnosticText');
+  if(!box || !text) return;
+  box.classList.remove('hidden');
+  text.textContent=`Stage: ${stage}\n\n${errorToText(err)}`;
+}
+function clearDiagnostic(){
+  const box=$('#diagnosticBox');
+  if(box) box.classList.add('hidden');
+}
+window.addEventListener('error',e=>{
+  if(e.error) console.error('ModuleScan global error:',e.error);
+});
+window.addEventListener('unhandledrejection',e=>{
+  console.error('ModuleScan unhandled rejection:',e.reason);
+});
+
+$('#copyDiagnostic').onclick=async()=>{
+  const text=$('#diagnosticText').textContent||'';
+  try{
+    await navigator.clipboard.writeText(text);
+    toast('Technical error copied.');
+  }catch(e){
+    toast('Copy is not available. Please take a screenshot.');
+  }
+};
+
 $('#extractBtn').onclick=async()=>{
   const file=$('#photoInput').files[0];
   if(!file){toast('Please upload a photo first');return}
 
-  const btn=$('#extractBtn');btn.disabled=true;
+  const btn=$('#extractBtn');
+  btn.disabled=true;
+  clearDiagnostic();
   $('#progressWrap').classList.remove('hidden');
   $('#progressBar').style.width='8%';
-  $('#progressText').textContent='Preparing free AI OCR...';
-  $('#ocrStatus').textContent='Loading the AI OCR engine. The first run can take longer while models are downloaded.';
+  $('#progressText').textContent='Checking the selected photo...';
+  $('#ocrStatus').textContent='Preparing free AI OCR in your browser.';
 
   let ocr=null;
-  try{
-    $('#progressBar').style.width='20%';
-    $('#progressText').textContent='Loading OCR model...';
+  let stage='photo preparation';
 
-    // Use PaddleOCR's dedicated Worker mode and an explicit ONNX Runtime WASM
-    // location. This avoids relying on Vite/Vercel asset rewriting on iPhone Safari.
+  try{
+    stage='PaddleOCR runtime initialization';
+    $('#progressBar').style.width='20%';
+    $('#progressText').textContent='Starting PaddleOCR engine...';
+
+    // v8: simplest official browser configuration.
+    // No Worker, no custom WASM path, and direct File input.
     ocr=await PaddleOCR.create({
       lang:'en',
       ocrVersion:'PP-OCRv5',
-      worker:true,
-      ortOptions:{
-        backend:'wasm',
-        wasmPaths:'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/',
-        numThreads:1,
-        simd:true
-      }
+      ortOptions:{ backend:'auto' }
     });
 
+    stage='OCR prediction';
     $('#progressBar').style.width='55%';
-    $('#progressText').textContent='Reading table positions and text...';
+    $('#progressText').textContent='Reading table text and positions...';
 
-    $('#progressBar').style.width='42%';
-    $('#progressText').textContent='Enhancing small table text...';
-    const ocrImage=await prepareImageForOcr(file);
-
-    // Run OCR on the enhanced image. If preprocessing was unsupported,
-    // prepareImageForOcr returns the original File automatically.
-    const [result]=await ocr.predict(ocrImage,{
+    // Direct File input is supported by PaddleOCR.js and avoids another
+    // canvas/format conversion step that can fail on iPhone Safari.
+    const [result]=await ocr.predict(file,{
       textDetLimitSideLen:2400,
       textDetThresh:0.25,
       textDetBoxThresh:0.35,
@@ -379,20 +415,19 @@ $('#extractBtn').onclick=async()=>{
       textRecScoreThresh:0.10
     });
 
+    stage='OCR result parsing';
+    $('#progressBar').style.width='82%';
+    $('#progressText').textContent='Building module rows...';
+
     const items=result?.items||[];
-    const raw=items
-      .map(it=>{
-        const b=itemBox(it);
-        return `${it.text}   [x:${Math.round(b.cx)}, y:${Math.round(b.cy)}, score:${Math.round((it.score||0)*100)}%]`;
-      }).join('\n');
+    const raw=items.map(it=>{
+      const b=itemBox(it);
+      return `${it.text}   [x:${Math.round(b.cx)}, y:${Math.round(b.cy)}, score:${Math.round((it.score||0)*100)}%]`;
+    }).join('\n');
 
     $('#rawText').textContent=raw||'No text detected.';
-    $('#progressBar').style.width='85%';
-    $('#progressText').textContent='Building table rows from OCR positions...';
-
     state.draft=parsePositionedOcr(items, result?.image?.width || 1);
 
-    // Fallback to text parser if the image has too few usable positioned rows.
     if(!state.draft.length){
       const plain=items.map(x=>x.text).join('\n');
       state.draft=parseOcr(plain);
@@ -402,7 +437,6 @@ $('#extractBtn').onclick=async()=>{
     const scheduleInfo=inferScheduleInfo(plainText,state.draft);
     setScheduleInfo(scheduleInfo);
 
-    // Apply detected common schedule information only when it is actually detected.
     if(scheduleInfo.towerNo || scheduleInfo.level || scheduleInfo.tower){
       state.draft.forEach(r=>{
         if(scheduleInfo.towerNo) r.towerNo=scheduleInfo.towerNo;
@@ -424,11 +458,12 @@ $('#extractBtn').onclick=async()=>{
     $('#reviewCard').scrollIntoView({behavior:'smooth'});
     $('#ocrStatus').textContent='AI OCR completed. Review the extracted data below.';
   }catch(err){
-    console.error('ModuleScan AI OCR error:', err);
-    const detail=(err && err.message) ? err.message : String(err || 'Unknown error');
-    $('#ocrStatus').textContent='AI OCR could not start: ' + detail;
-    $('#rawText').textContent='Technical error:\n' + detail + '\n\nPlease send a screenshot of this message so the issue can be fixed.';
-    toast('AI OCR could not start. The exact error is now shown below.');
+    console.error(`ModuleScan AI OCR error at ${stage}:`,err);
+    const detail=errorToText(err);
+    $('#ocrStatus').textContent=`AI OCR failed during ${stage}. The full technical error is shown below.`;
+    $('#rawText').textContent=`Technical error at ${stage}:\n\n${detail}`;
+    showDiagnostic(stage,err);
+    toast('AI OCR failed. Full technical error is now displayed.');
   }finally{
     try{ocr?.dispose?.()}catch(e){}
     btn.disabled=false;
