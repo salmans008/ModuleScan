@@ -28,13 +28,13 @@
         <div class="card upload-card">
           <h2>Upload Photo</h2>
           <p class="muted">Use a clear, straight photo. Qty is automatically ignored.</p>
-          <label class="dropzone" id="dropzone">
-            <input type="file" id="photoInput" accept="image/*" hidden>
+          <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Take or upload a photo">
+            <input type="file" id="photoInput" accept="image/*">
             <div class="upload-icon">📷</div>
             <strong>Take or upload a photo</strong>
             <span>Tap here to use your camera or Files</span>
             <small>JPG, PNG, WEBP</small>
-          </label>
+          </div>
           <div id="previewWrap" class="preview-wrap hidden">
             <img id="preview" alt="Uploaded preview">
             <button class="secondary" id="removePhoto">Remove photo</button>

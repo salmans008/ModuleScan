@@ -21,3 +21,8 @@ This release uses PaddleOCR's official quick-start style more closely:
 - sends the uploaded `File` directly to OCR
 - no forced CDN WASM path
 - exact technical errors are shown in the app if initialization fails
+
+
+Version 5.2: Improved iPhone/iPad photo picker compatibility.
+
+Version 5.3: Fixes iPhone Files/HEIC uploads and accepts image files with missing MIME types.

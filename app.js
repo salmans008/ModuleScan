@@ -218,8 +218,80 @@ function renderDraft(){
 }
 const titles={upload:['Upload & Extract','Upload a module schedule photo and automatically read it using free OCR.'],database:['Module Database','Search, filter and manage all saved module records.'],export:['Export Data','Download your module records for use in Excel.']};
 $$('.nav').forEach(b=>b.onclick=()=>{$$('.nav').forEach(x=>x.classList.remove('active'));b.classList.add('active');$$('.page').forEach(x=>x.classList.remove('active-page'));$('#'+b.dataset.page).classList.add('active-page');$('#pageTitle').textContent=titles[b.dataset.page][0];$('#pageSubtitle').textContent=titles[b.dataset.page][1];renderDb()});
-$('#photoInput').onchange=e=>{let f=e.target.files[0];if(!f)return;$('#preview').src=URL.createObjectURL(f);$('#previewWrap').classList.remove('hidden');$('#dropzone').classList.add('hidden');$('#ocrStatus').textContent='Photo ready. Tap Extract Data to start free OCR.'};
-$('#removePhoto').onclick=()=>{$('#photoInput').value='';$('#previewWrap').classList.add('hidden');$('#dropzone').classList.remove('hidden');$('#ocrStatus').textContent='Upload a photo, then tap Extract Data.'};
+function handlePhoto(file){
+  if(!file){
+    $('#ocrStatus').textContent='No photo was selected. Please try again.';
+    return;
+  }
+
+  // iPhone Files can report an empty MIME type or application/octet-stream
+  // even for a valid image. Accept common image extensions as a fallback.
+  const name=(file.name||'').toLowerCase();
+  const looksLikeImage=(file.type||'').startsWith('image/') ||
+    /\.(jpg|jpeg|png|webp|heic|heif)$/i.test(name);
+
+  if(!looksLikeImage){
+    toast('Please choose a JPG, PNG, WEBP or HEIC photo.');
+    $('#photoInput').value='';
+    return;
+  }
+
+  try{
+    const url=URL.createObjectURL(file);
+    const preview=$('#preview');
+
+    if(preview.dataset.url) URL.revokeObjectURL(preview.dataset.url);
+    preview.dataset.url=url;
+
+    // Show the selected photo immediately. If the preview format is not
+    // supported, the file is still retained for OCR.
+    preview.onload=()=>{
+      $('#previewWrap').classList.remove('hidden');
+      $('#dropzone').classList.add('hidden');
+    };
+    preview.onerror=()=>{
+      $('#previewWrap').classList.remove('hidden');
+      $('#dropzone').classList.add('hidden');
+      $('#ocrStatus').textContent='Photo selected. Preview is unavailable, but you can still tap Extract Data.';
+    };
+    preview.src=url;
+
+    $('#previewWrap').classList.remove('hidden');
+    $('#dropzone').classList.add('hidden');
+    $('#ocrStatus').textContent=`Photo selected: ${file.name||'image'}. Tap Extract Data to start free OCR.`;
+  }catch(err){
+    $('#ocrStatus').textContent='Photo was selected but could not be previewed. Tap Extract Data to continue.';
+    toast('Photo selected.');
+  }
+}
+
+const photoInput=$('#photoInput');
+photoInput.addEventListener('change',e=>handlePhoto(e.target.files&&e.target.files[0]));
+// Some mobile browsers dispatch input before/along with change.
+photoInput.addEventListener('input',e=>handlePhoto(e.target.files&&e.target.files[0]));
+
+// Extra Safari/iPhone fallback: tapping the visible drop zone also requests the picker.
+$('#dropzone').onclick=e=>{
+  if(e.target.id==='photoInput') return;
+  const input=$('#photoInput');
+  try{ input.click(); }catch(err){}
+};
+$('#dropzone').onkeydown=e=>{
+  if(e.key==='Enter'||e.key===' '){
+    e.preventDefault();
+    try{$('#photoInput').click()}catch(err){}
+  }
+};
+$('#removePhoto').onclick=()=>{
+  const preview=$('#preview');
+  if(preview.dataset.url) URL.revokeObjectURL(preview.dataset.url);
+  preview.dataset.url='';
+  preview.src='';
+  $('#photoInput').value='';
+  $('#previewWrap').classList.add('hidden');
+  $('#dropzone').classList.remove('hidden');
+  $('#ocrStatus').textContent='Upload a photo, then tap Extract Data.';
+};
 $('#extractBtn').onclick=async()=>{
   const file=$('#photoInput').files[0];
   if(!file){toast('Please upload a photo first');return}
