@@ -15,38 +15,86 @@ function looksLikeTag(s){return /(?:^|[-\s])A\s*\d{2,3}[-\s].*?(?:^|[-\s])L\s*\d
 function parseOcr(text){
   const lines=text.split(/\n+/).map(x=>x.replace(/\s+/g,' ').trim()).filter(Boolean);
   const rows=[];
-  for(let i=0;i<lines.length;i++){
-    let line=lines[i];
-    if(/^(sl\.?\s*number|module\s*details|qty|tag|tower)$/i.test(line))continue;
-    let sl=(line.match(/^(\d{1,4})\b/)||[])[1]||'';
-    let tagStart=line.search(/(?:TC[-\s]*)?A\s*\d{2,3}[-\s]*L\s*\d{1,3}/i);
-    if(tagStart<0){
-      // OCR sometimes separates columns into neighbouring lines; skip until a likely tag exists.
-      continue;
-    }
-    let before=line.slice(0,tagStart).replace(/^\d+\s*/,'').trim();
-    let rest=line.slice(tagStart).trim();
+  let current=null;
+
+  function finish(){
+    if(!current) return;
+    let blob=current.parts.join(' ').replace(/\s+/g,' ').trim();
+
+    // Serial number
+    let sl=current.sl || String(rows.length+1);
+
+    // Tower is usually the final single letter in the OCR row/continuation.
     let tower='';
-    const tail=rest.match(/\s+([A-Z])\s*$/i);
-    if(tail){tower=tail[1].toUpperCase();rest=rest.slice(0,tail.index).trim()}
-    // remove a quantity accidentally sitting before tag only
-    before=before.replace(/\s+\d+\s*$/,'').trim();
-    let tag=normalizeTag(rest);
-    const parsed=parseTag(tag);
-    rows.push({sl:sl||String(rows.length+1),module:before,tag,towerNo:parsed.towerNo,level:parsed.level,tower});
+    let towerMatch=blob.match(/\b([A-Z])\s*$/i);
+    if(towerMatch){ tower=towerMatch[1].toUpperCase(); blob=blob.slice(0,towerMatch.index).trim(); }
+
+    // Remove the Qty column (normally 1) only when it follows the module description.
+    // Find the start of the Tag column. OCR often removes hyphens, so accept TC/TCA/TCD etc.
+    let tagStart=blob.search(/\bT\s*C/i);
+    if(tagStart<0) tagStart=blob.search(/\bA\s*[0OD]\s*\d/i);
+
+    let before=tagStart>=0 ? blob.slice(0,tagStart).trim() : blob;
+    let tagRaw=tagStart>=0 ? blob.slice(tagStart).trim() : '';
+
+    // Qty is ignored.
+    before=before.replace(/\s+\b1\s*$/,'').trim();
+
+    // OCR sometimes joins a continuation line onto the tag.
+    // Keep the whole tag-like text, but normalize obvious spacing.
+    let tag=normalizeTag(tagRaw);
+
+    // Fuzzy extraction for A02 and L38 when OCR reads 0 as D/O or removes hyphens.
+    let towerNo='', level='';
+    let tm=tag.match(/A\s*([0OD])\s*(\d{1,2})/i);
+    if(tm) towerNo='A0'+tm[2].padStart(2,'0').slice(-2);
+
+    let lm=tag.match(/L\s*([0OD]?\d{1,3})/i);
+    if(lm){
+      let n=lm[1].replace(/[OD]/gi,'0').replace(/^0+/,'') || '0';
+      level='L'+n;
+    }
+
+    // If normal parsing succeeded, prefer it.
+    const normal=parseTag(tag);
+    towerNo=normal.towerNo || towerNo;
+    level=normal.level || level;
+
+    // Module details are usually clear in OCR. Remove accidental Qty at the end.
+    let module=before.replace(/\s+\d+\s*$/,'').trim();
+
+    // Do not create header/noise rows.
+    if(module || tag || current.sl){
+      rows.push({sl,module,tag,towerNo,level,tower});
+    }
+    current=null;
   }
-  // Fallback: combine adjacent OCR lines when a tag and module were split
-  if(!rows.length){
-    for(let i=0;i<lines.length;i++){
-      const combined=[lines[i],lines[i+1]||'',lines[i+2]||''].join(' ');
-      const m=combined.match(/(\d+)?\s*(.*?)\s*((?:TC[-\s]*)?A\s*\d{2,3}[-\s]*L\s*\d{1,3}.*)/i);
-      if(m&&looksLikeTag(m[3])){
-        let tag=normalizeTag(m[3]), p=parseTag(tag);
-        rows.push({sl:m[1]||String(rows.length+1),module:m[2].trim(),tag,towerNo:p.towerNo,level:p.level,tower:''});
-      }
+
+  for(const line of lines){
+    if(/^(sl\.?\s*number|slumber|module\s*details|modula\s*detals|qty|tag|tower)$/i.test(line)) continue;
+
+    // A new row normally starts with a serial number 1–25.
+    const m=line.match(/^(\d{1,2})\s+(.*)$/);
+    if(m && Number(m[1])>=1 && Number(m[1])<=99){
+      finish();
+      current={sl:m[1],parts:[m[2]]};
+    }else if(current){
+      // Continuation lines are common because OCR wraps the Tag and Tower columns.
+      current.parts.push(line);
     }
   }
-  return rows;
+  finish();
+
+  // Remove obvious false rows and clean fields.
+  const cleaned=rows
+    .map(r=>{
+      r.module=r.module.replace(/\b(?:PF|PFM|KFM)\s*$/i,m=>m).trim();
+      r.tag=normalizeTag(r.tag);
+      return r;
+    })
+    .filter(r=>r.sl || r.module || r.tag);
+
+  return cleaned;
 }
 function rowHtml(r,i){return `<tr><td><input data-k="sl" data-i="${i}" value="${r.sl||''}"></td><td><input data-k="module" data-i="${i}" value="${r.module||''}"></td><td><input data-k="tag" data-i="${i}" value="${r.tag||''}"></td><td><input data-k="towerNo" data-i="${i}" value="${r.towerNo||''}" readonly></td><td><input data-k="level" data-i="${i}" value="${r.level||''}" readonly></td><td><input data-k="tower" data-i="${i}" value="${r.tower||''}"></td><td><button class="remove" data-remove="${i}">×</button></td></tr>`}
 function renderDraft(){
