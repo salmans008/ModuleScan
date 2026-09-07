@@ -235,31 +235,24 @@ $('#extractBtn').onclick=async()=>{
     $('#progressBar').style.width='20%';
     $('#progressText').textContent='Loading OCR model...';
 
+    // Use the official browser SDK's default automatic backend selection.
+    // This is more compatible with Safari/iPhone than forcing a specific WASM path.
     ocr=await PaddleOCR.create({
       lang:'en',
       ocrVersion:'PP-OCRv5',
       ortOptions:{
-        backend:'wasm',
-        wasmPaths:'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/'
+        backend:'auto'
       }
     });
 
     $('#progressBar').style.width='55%';
     $('#progressText').textContent='Reading table positions and text...';
 
-    // Upscale the photo before OCR. This helps with small technical tags.
-    const bitmap=await createImageBitmap(file);
-    const scale=Math.min(2.5, Math.max(1.5, 2200/Math.max(bitmap.width,1)));
-    const canvas=document.createElement('canvas');
-    canvas.width=Math.round(bitmap.width*scale);
-    canvas.height=Math.round(bitmap.height*scale);
-    const ctx=canvas.getContext('2d',{willReadFrequently:false});
-    ctx.imageSmoothingEnabled=true;
-    ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
-    bitmap.close?.();
-
-    const [result]=await ocr.predict(canvas,{
-      textDetLimitSideLen:2200,
+    // Pass the original uploaded File directly to PaddleOCR.
+    // This follows the official browser quick-start path and avoids
+    // iPhone canvas / ImageBitmap compatibility problems.
+    const [result]=await ocr.predict(file,{
+      textDetLimitSideLen:2000,
       textRecScoreThresh:0.15
     });
 
@@ -274,7 +267,7 @@ $('#extractBtn').onclick=async()=>{
     $('#progressBar').style.width='85%';
     $('#progressText').textContent='Building table rows from OCR positions...';
 
-    state.draft=parsePositionedOcr(items, canvas.width);
+    state.draft=parsePositionedOcr(items, result?.image?.width || 1);
 
     // Fallback to text parser if the image has too few usable positioned rows.
     if(!state.draft.length){
@@ -308,9 +301,11 @@ $('#extractBtn').onclick=async()=>{
     $('#reviewCard').scrollIntoView({behavior:'smooth'});
     $('#ocrStatus').textContent='AI OCR completed. Review the extracted data below.';
   }catch(err){
-    console.error(err);
-    $('#ocrStatus').textContent='AI OCR failed to load or process the photo. Check your internet connection and try again.';
-    toast('AI OCR failed. Try again or use a clearer photo.');
+    console.error('ModuleScan AI OCR error:', err);
+    const detail=(err && err.message) ? err.message : String(err || 'Unknown error');
+    $('#ocrStatus').textContent='AI OCR could not start: ' + detail;
+    $('#rawText').textContent='Technical error:\n' + detail + '\n\nPlease send a screenshot of this message so the issue can be fixed.';
+    toast('AI OCR could not start. The exact error is now shown below.');
   }finally{
     try{ocr?.dispose?.()}catch(e){}
     btn.disabled=false;

@@ -12,3 +12,12 @@ This version uses the official PaddleOCR.js browser SDK and runs OCR in the user
 No paid OCR API key is required.
 
 The first OCR run may take longer because the OCR model and browser runtime are loaded on demand.
+
+
+## v5.1 iPhone compatibility fix
+
+This release uses PaddleOCR's official quick-start style more closely:
+- automatic backend selection (`backend: "auto"`)
+- sends the uploaded `File` directly to OCR
+- no forced CDN WASM path
+- exact technical errors are shown in the app if initialization fails
