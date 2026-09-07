@@ -1,16 +1,18 @@
-# ModuleScan Website
+# ModuleScan - Free OCR Version
 
-Open `index.html` in any modern browser.
+This version uses Tesseract.js in the browser, so no OpenAI API key or paid API credits are required.
 
-This is a polished functional frontend prototype:
-- Upload photo preview
-- Review/edit module records
-- Qty intentionally excluded
-- Tag parsing: A02 → Tower No., L38 → Level
-- Original Tower column retained
+Features:
+- Take/upload a photo on mobile
+- Free browser OCR
+- Qty ignored
+- Parses A02 as Tower No.
+- Parses L38 as Level
+- Keeps original Tower column
+- Review/edit before save
 - Duplicate checking
-- Browser database (localStorage)
+- Browser storage
 - Search/filter
 - CSV export
 
-For production deployment, connect the Extract button to a backend OCR/AI service and replace localStorage with a cloud database.
+Important: OCR accuracy depends on image quality. Always review Tags before saving.

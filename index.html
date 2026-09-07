@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ModuleScan | Photo Data Extractor</title>
+<title>ModuleScan | Free OCR</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,25 +15,24 @@
       <button class="nav" data-page="database">▦ <span>Module Database</span></button>
       <button class="nav" data-page="export">⇩ <span>Export Data</span></button>
     </nav>
-    <div class="sidebar-footer">Module Tracking System<br><small>v1.0</small></div>
+    <div class="sidebar-footer">Module Tracking System<br><small>Free OCR Edition</small></div>
   </aside>
-
   <main>
     <header>
-      <div><h1 id="pageTitle">Upload & Extract</h1><p id="pageSubtitle">Upload a module schedule photo and convert it into structured data.</p></div>
-      <div class="badge">● Ready</div>
+      <div><h1 id="pageTitle">Upload & Extract</h1><p id="pageSubtitle">Upload a module schedule photo and automatically read it using free OCR.</p></div>
+      <div class="badge">● Free OCR Ready</div>
     </header>
 
     <section id="upload" class="page active-page">
       <div class="grid">
         <div class="card upload-card">
           <h2>Upload Photo</h2>
-          <p class="muted">Upload JPG, PNG or WEBP. The Qty column will be ignored.</p>
+          <p class="muted">Use a clear, straight photo. Qty is automatically ignored.</p>
           <label class="dropzone" id="dropzone">
-            <input type="file" id="photoInput" accept="image/*" hidden>
-            <div class="upload-icon">↑</div>
-            <strong>Drop your photo here</strong>
-            <span>or tap to browse from your phone</span>
+            <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
+            <div class="upload-icon">📷</div>
+            <strong>Take or upload a photo</strong>
+            <span>Tap here to use your camera or Files</span>
             <small>JPG, PNG, WEBP</small>
           </label>
           <div id="previewWrap" class="preview-wrap hidden">
@@ -41,24 +40,27 @@
             <button class="secondary" id="removePhoto">Remove photo</button>
           </div>
         </div>
-
         <div class="card workflow">
-          <h2>Automatic extraction</h2>
-          <div class="step"><b>1</b><div><strong>Read table</strong><span>AI/OCR reads rows from the uploaded image.</span></div></div>
-          <div class="step"><b>2</b><div><strong>Ignore Qty</strong><span>Quantity is never stored.</span></div></div>
+          <h2>Free automatic extraction</h2>
+          <div class="step"><b>1</b><div><strong>Read table</strong><span>Free OCR reads text directly in your browser.</span></div></div>
+          <div class="step"><b>2</b><div><strong>Ignore Qty</strong><span>The Qty column is not saved.</span></div></div>
           <div class="step"><b>3</b><div><strong>Parse Tag</strong><span>A02 → Tower No. and L38 → Level.</span></div></div>
-          <div class="step"><b>4</b><div><strong>Review & Save</strong><span>Edit results before adding them to the database.</span></div></div>
+          <div class="step"><b>4</b><div><strong>Review & Save</strong><span>Always check the result before saving.</span></div></div>
         </div>
       </div>
 
       <div class="card extract-card">
-        <div><h2>Extract Module Data</h2><p class="muted">For this prototype, add or edit the rows manually after upload. Connect OCR/AI to automate extraction.</p></div>
+        <div>
+          <h2>Extract Module Data</h2>
+          <p class="muted" id="ocrStatus">Upload a photo, then tap Extract Data.</p>
+          <div class="progress-wrap hidden" id="progressWrap"><div class="progress"><div id="progressBar"></div></div><span id="progressText">Preparing OCR...</span></div>
+        </div>
         <button class="primary" id="extractBtn">Extract Data →</button>
       </div>
 
       <div class="card hidden" id="reviewCard">
         <div class="section-head">
-          <div><h2>Review Extracted Data</h2><p class="muted">Tower No. and Level are automatically parsed from the Tag.</p></div>
+          <div><h2>Review Extracted Data</h2><p class="muted">Please verify Tags carefully. OCR can make mistakes with small text.</p></div>
           <button class="secondary" id="addRow">+ Add Row</button>
         </div>
         <div class="table-wrap">
@@ -67,6 +69,7 @@
             <tbody></tbody>
           </table>
         </div>
+        <details class="ocr-details"><summary>Show raw OCR text</summary><pre id="rawText"></pre></details>
         <div class="actions"><button class="secondary" id="clearDraft">Clear</button><button class="primary" id="saveBtn">Save to Database</button></div>
       </div>
     </section>
@@ -78,7 +81,7 @@
         <div class="stat"><span>Unique Levels</span><strong id="levelCount">0</strong></div>
       </div>
       <div class="card">
-        <div class="section-head"><div><h2>Module Database</h2><p class="muted">All saved records are stored in this browser for the prototype.</p></div><button class="danger" id="clearDb">Clear Database</button></div>
+        <div class="section-head"><div><h2>Module Database</h2><p class="muted">Records are stored in this browser in the free version.</p></div><button class="danger" id="clearDb">Clear Database</button></div>
         <div class="filters">
           <input id="searchInput" placeholder="Search Tag or Module Details">
           <input id="towerFilter" placeholder="Tower No. e.g. A02">
@@ -90,17 +93,12 @@
     </section>
 
     <section id="export" class="page">
-      <div class="card export-card">
-        <div class="export-icon">⇩</div>
-        <h2>Export Module Data</h2>
-        <p>Download all saved module records as a CSV file that opens directly in Microsoft Excel.</p>
-        <button class="primary" id="exportBtn">Download CSV</button>
-      </div>
+      <div class="card export-card"><div class="export-icon">⇩</div><h2>Export Module Data</h2><p>Download all saved module records as a CSV file that opens in Excel.</p><button class="primary" id="exportBtn">Download CSV</button></div>
     </section>
-
     <div id="toast"></div>
   </main>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
