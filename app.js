@@ -1,3 +1,5 @@
+import { PaddleOCR } from "@paddleocr/paddleocr-js";
+
 const state={draft:[],db:JSON.parse(localStorage.getItem('moduleScanDb')||'[]')};
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const COLUMNS=['Sl. Number','Module Details','Tag','Tower No.','Level','Tower'];
@@ -12,96 +14,205 @@ function normalizeTag(s){
   return (s||'').replace(/[—–_]/g,'-').replace(/\s*-\s*/g,'-').replace(/\bA\s+(\d)/gi,'A$1').replace(/\bL\s+(\d)/gi,'L$1').replace(/\s+/g,' ').trim();
 }
 function looksLikeTag(s){return /(?:^|[-\s])A\s*\d{2,3}[-\s].*?(?:^|[-\s])L\s*\d{1,3}/i.test(s)||/TC[-\s]*A\d{2,3}[-\s]*L\d{1,3}/i.test(s)}
+function average(values){return values.reduce((a,b)=>a+b,0)/(values.length||1)}
+function itemBox(item){
+  const pts=item.poly||[];
+  const xs=pts.map(p=>Array.isArray(p)?p[0]:p.x);
+  const ys=pts.map(p=>Array.isArray(p)?p[1]:p.y);
+  return {
+    x: Math.min(...xs), x2: Math.max(...xs),
+    y: Math.min(...ys), y2: Math.max(...ys),
+    cx: average(xs), cy: average(ys)
+  };
+}
+
+function parsePositionedOcr(items, imageWidth){
+  // Use the physical positions of OCR boxes instead of spaces/newlines.
+  // Column layout is normalized to the schedule format:
+  // Sl. Number | Module Details | Qty (ignored) | Tag | Tower
+  const clean=items
+    .filter(it=>(it.text||'').trim())
+    .map(it=>({...it,text:(it.text||'').replace(/\s+/g,' ').trim(),...itemBox(it)}))
+    .filter(it=>it.text);
+
+  if(!clean.length) return [];
+
+  // Ignore the header and group OCR boxes into visual rows by Y position.
+  const body=clean.filter(it=>!/^(sl\.?\s*number|slumber|module\s*details|modula\s*detals|qty|tag|tower)$/i.test(it.text));
+  body.sort((a,b)=>a.cy-b.cy);
+
+  const heights=body.map(x=>Math.max(1,x.y2-x.y));
+  const median=[...heights].sort((a,b)=>a-b)[Math.floor(heights.length/2)]||20;
+  const tolerance=Math.max(16, median*0.9);
+
+  const groups=[];
+  for(const it of body){
+    let g=groups.findLast?.(r=>Math.abs(r.cy-it.cy)<=tolerance);
+    if(!g){
+      g={cy:it.cy,items:[it]};
+      groups.push(g);
+    }else{
+      g.items.push(it);
+      g.cy=average(g.items.map(x=>x.cy));
+    }
+  }
+
+  const rows=[];
+  for(const g of groups){
+    const parts={sl:[],module:[],tag:[],tower:[]};
+
+    for(const it of g.items.sort((a,b)=>a.cx-b.cx)){
+      const x=it.cx/(imageWidth||1);
+
+      // These normalized bands match the schedule layout shown in the user's sample.
+      if(x < 0.16) parts.sl.push(it.text);
+      else if(x < 0.50) parts.module.push(it.text);
+      else if(x < 0.59) {
+        // Qty column intentionally ignored.
+      }
+      else if(x < 0.93) parts.tag.push(it.text);
+      else parts.tower.push(it.text);
+    }
+
+    const slText=parts.sl.join(' ').trim();
+    const slMatch=slText.match(/\b(\d{1,3})\b/);
+    if(!slMatch) continue;
+
+    const sl=slMatch[1];
+    if(Number(sl)<1 || Number(sl)>999) continue;
+
+    let module=parts.module.join(' ').replace(/\s+\b1\s*$/,'').trim();
+    let tag=normalizeTag(parts.tag.join(' '));
+    let tower=(parts.tower.join(' ').match(/[A-Z]/i)||[''])[0].toUpperCase();
+
+    // If the tag box is split by OCR, retain all pieces in their x order.
+    const parsed=parseTag(tag);
+    rows.push({
+      sl,
+      module,
+      tag,
+      towerNo:parsed.towerNo||'',
+      level:parsed.level||'',
+      tower
+    });
+  }
+
+  // De-duplicate same serial number and preserve first visual row.
+  const seen=new Set();
+  return rows.filter(r=>{
+    if(seen.has(r.sl)) return false;
+    seen.add(r.sl);
+    return r.module||r.tag||r.tower;
+  });
+}
+
 function parseOcr(text){
+  // Text-only fallback if position metadata is unavailable.
   const lines=text.split(/\n+/).map(x=>x.replace(/\s+/g,' ').trim()).filter(Boolean);
   const rows=[];
   let current=null;
-
   function finish(){
     if(!current) return;
-    let blob=current.parts.join(' ').replace(/\s+/g,' ').trim();
-
-    // Serial number
-    let sl=current.sl || String(rows.length+1);
-
-    // Tower is usually the final single letter in the OCR row/continuation.
+    const blob=current.parts.join(' ').replace(/\s+/g,' ').trim();
+    const sl=current.sl;
     let tower='';
-    let towerMatch=blob.match(/\b([A-Z])\s*$/i);
-    if(towerMatch){ tower=towerMatch[1].toUpperCase(); blob=blob.slice(0,towerMatch.index).trim(); }
-
-    // Remove the Qty column (normally 1) only when it follows the module description.
-    // Find the start of the Tag column. OCR often removes hyphens, so accept TC/TCA/TCD etc.
-    let tagStart=blob.search(/\bT\s*C/i);
-    if(tagStart<0) tagStart=blob.search(/\bA\s*[0OD]\s*\d/i);
-
-    let before=tagStart>=0 ? blob.slice(0,tagStart).trim() : blob;
-    let tagRaw=tagStart>=0 ? blob.slice(tagStart).trim() : '';
-
-    // Qty is ignored.
-    before=before.replace(/\s+\b1\s*$/,'').trim();
-
-    // OCR sometimes joins a continuation line onto the tag.
-    // Keep the whole tag-like text, but normalize obvious spacing.
-    let tag=normalizeTag(tagRaw);
-
-    // Fuzzy extraction for A02 and L38 when OCR reads 0 as D/O or removes hyphens.
-    let towerNo='', level='';
-    let tm=tag.match(/A\s*([0OD])\s*(\d{1,2})/i);
-    if(tm) towerNo='A0'+tm[2].padStart(2,'0').slice(-2);
-
-    let lm=tag.match(/L\s*([0OD]?\d{1,3})/i);
-    if(lm){
-      let n=lm[1].replace(/[OD]/gi,'0').replace(/^0+/,'') || '0';
-      level='L'+n;
-    }
-
-    // If normal parsing succeeded, prefer it.
-    const normal=parseTag(tag);
-    towerNo=normal.towerNo || towerNo;
-    level=normal.level || level;
-
-    // Module details are usually clear in OCR. Remove accidental Qty at the end.
-    let module=before.replace(/\s+\d+\s*$/,'').trim();
-
-    // Do not create header/noise rows.
-    if(module || tag || current.sl){
-      rows.push({sl,module,tag,towerNo,level,tower});
-    }
+    const tm=blob.match(/\b([A-Z])\s*$/i);
+    let b=blob;
+    if(tm){tower=tm[1].toUpperCase();b=b.slice(0,tm.index).trim()}
+    const tagStart=b.search(/\bT\s*C/i);
+    const module=(tagStart>=0?b.slice(0,tagStart):b).replace(/\s+\b1\s*$/,'').trim();
+    const tag=normalizeTag(tagStart>=0?b.slice(tagStart):'');
+    const p=parseTag(tag);
+    if(sl) rows.push({sl,module,tag,towerNo:p.towerNo||'',level:p.level||'',tower});
     current=null;
   }
-
   for(const line of lines){
-    if(/^(sl\.?\s*number|slumber|module\s*details|modula\s*detals|qty|tag|tower)$/i.test(line)) continue;
-
-    // A new row normally starts with a serial number 1–25.
-    const m=line.match(/^(\d{1,2})\s+(.*)$/);
-    if(m && Number(m[1])>=1 && Number(m[1])<=99){
-      finish();
-      current={sl:m[1],parts:[m[2]]};
-    }else if(current){
-      // Continuation lines are common because OCR wraps the Tag and Tower columns.
-      current.parts.push(line);
-    }
+    const m=line.match(/^(\d{1,3})\s+(.*)$/);
+    if(m){finish();current={sl:m[1],parts:[m[2]]}}
+    else if(current) current.parts.push(line);
   }
   finish();
-
-  // Remove obvious false rows and clean fields.
-  const cleaned=rows
-    .map(r=>{
-      r.module=r.module.replace(/\b(?:PF|PFM|KFM)\s*$/i,m=>m).trim();
-      r.tag=normalizeTag(r.tag);
-      return r;
-    })
-    .filter(r=>r.sl || r.module || r.tag);
-
-  return cleaned;
+  return rows;
 }
-function rowHtml(r,i){return `<tr><td><input data-k="sl" data-i="${i}" value="${r.sl||''}"></td><td><input data-k="module" data-i="${i}" value="${r.module||''}"></td><td><input data-k="tag" data-i="${i}" value="${r.tag||''}"></td><td><input data-k="towerNo" data-i="${i}" value="${r.towerNo||''}" readonly></td><td><input data-k="level" data-i="${i}" value="${r.level||''}" readonly></td><td><input data-k="tower" data-i="${i}" value="${r.tower||''}"></td><td><button class="remove" data-remove="${i}">×</button></td></tr>`}
+
+function inferScheduleInfo(text, rows){
+  const all=(text||'').replace(/\s+/g,' ').toUpperCase();
+
+  // Common OCR forms from tags such as TC-A02-L38-...
+  // OCR may read A02 as AD2/AO2/A2 and L38 as L3B.
+  let towerNo='';
+  let level='';
+  let tower='';
+
+  const a=all.match(/\bA\s*[-:]?\s*([0OD])\s*([0-9]{1,2})\b/);
+  if(a){
+    const first=String(a[1]).replace(/[OD]/g,'0');
+    towerNo='A'+first+String(a[2]).padStart(1,'0');
+    if(towerNo.length===3) towerNo='A0'+towerNo.slice(1);
+  }
+
+  const l=all.match(/\bL\s*[-:]?\s*([0-9OBD]{1,3})\b/);
+  if(l){
+    level='L'+l[1].replace(/[OBD]/g,m=>m==='B'?'8':'0');
+  }
+
+  // Last single-letter column is often repeated for every row.
+  const letters=all.match(/\b[A-Z]\b/g)||[];
+  if(letters.length){
+    const counts={};
+    letters.forEach(x=>counts[x]=(counts[x]||0)+1);
+    const best=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+    if(best && best[1]>=2) tower=best[0];
+  }
+
+  // Use row values as fallback.
+  if(!towerNo){
+    const vals=rows.map(r=>r.towerNo).filter(Boolean);
+    if(vals.length) towerNo=vals.sort((a,b)=>vals.filter(v=>v===b).length-vals.filter(v=>v===a).length)[0];
+  }
+  if(!level){
+    const vals=rows.map(r=>r.level).filter(Boolean);
+    if(vals.length) level=vals.sort((a,b)=>vals.filter(v=>v===b).length-vals.filter(v=>v===a).length)[0];
+  }
+  if(!tower){
+    const vals=rows.map(r=>r.tower).filter(Boolean);
+    if(vals.length) tower=vals.sort((a,b)=>vals.filter(v=>v===b).length-vals.filter(v=>v===a).length)[0];
+  }
+
+  return {towerNo,level,tower};
+}
+
+function setScheduleInfo(info){
+  $('#scheduleTowerNo').value=info.towerNo||'';
+  $('#scheduleLevel').value=info.level||'';
+  $('#scheduleTower').value=info.tower||'';
+}
+
+function applyScheduleInfo(){
+  const towerNo=$('#scheduleTowerNo').value.trim().toUpperCase();
+  const level=$('#scheduleLevel').value.trim().toUpperCase();
+  const tower=$('#scheduleTower').value.trim().toUpperCase();
+
+  state.draft.forEach(r=>{
+    if(towerNo) r.towerNo=towerNo;
+    if(level) r.level=level;
+    if(tower) r.tower=tower;
+  });
+  renderDraft();
+}
+
+function rowHtml(r,i){return `<tr><td><input data-k="sl" data-i="${i}" value="${r.sl||''}"></td><td><input data-k="module" data-i="${i}" value="${r.module||''}"></td><td><input data-k="tag" data-i="${i}" value="${r.tag||''}"></td><td><input data-k="towerNo" data-i="${i}" value="${r.towerNo||''}"></td><td><input data-k="level" data-i="${i}" value="${r.level||''}"></td><td><input data-k="tower" data-i="${i}" value="${r.tower||''}"></td><td><button class="remove" data-remove="${i}">×</button></td></tr>`}
 function renderDraft(){
   $('#draftTable tbody').innerHTML=state.draft.map(rowHtml).join('');
   $$('#draftTable input').forEach(inp=>inp.oninput=()=>{
     let r=state.draft[inp.dataset.i];r[inp.dataset.k]=inp.value;
-    if(inp.dataset.k==='tag'){let p=parseTag(normalizeTag(inp.value));r.tag=normalizeTag(inp.value);r.towerNo=p.towerNo;r.level=p.level;renderDraft()}
+    if(inp.dataset.k==='tag'){
+      r.tag=normalizeTag(inp.value);
+      // Keep schedule-level values unless the user explicitly edits those fields.
+      const p=parseTag(r.tag);
+      if(!$('#scheduleTowerNo').value.trim() && p.towerNo) r.towerNo=p.towerNo;
+      if(!$('#scheduleLevel').value.trim() && p.level) r.level=p.level;
+    }
   });
   $$('[data-remove]').forEach(b=>b.onclick=()=>{state.draft.splice(b.dataset.remove,1);renderDraft()});
 }
@@ -112,37 +223,114 @@ $('#removePhoto').onclick=()=>{$('#photoInput').value='';$('#previewWrap').class
 $('#extractBtn').onclick=async()=>{
   const file=$('#photoInput').files[0];
   if(!file){toast('Please upload a photo first');return}
-  if(typeof Tesseract==='undefined'){toast('OCR library did not load. Check your internet connection.');return}
+
   const btn=$('#extractBtn');btn.disabled=true;
-  $('#progressWrap').classList.remove('hidden');$('#progressBar').style.width='0%';$('#progressText').textContent='Starting free OCR...';$('#ocrStatus').textContent='Reading image. Please keep this page open.';
+  $('#progressWrap').classList.remove('hidden');
+  $('#progressBar').style.width='8%';
+  $('#progressText').textContent='Preparing free AI OCR...';
+  $('#ocrStatus').textContent='Loading the AI OCR engine. The first run can take longer while models are downloaded.';
+
+  let ocr=null;
   try{
-    const worker=await Tesseract.createWorker('eng',1,{logger:m=>{
-      if(typeof m.progress==='number'){
-        const p=Math.round(m.progress*100);$('#progressBar').style.width=p+'%';$('#progressText').textContent=(m.status||'Processing')+' '+p+'%';
+    $('#progressBar').style.width='20%';
+    $('#progressText').textContent='Loading OCR model...';
+
+    ocr=await PaddleOCR.create({
+      lang:'en',
+      ocrVersion:'PP-OCRv5',
+      ortOptions:{
+        backend:'wasm',
+        wasmPaths:'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/'
       }
-    }});
-    const ret=await worker.recognize(file,{}, {text:true});
-    await worker.terminate();
-    const text=ret.data.text||'';
-    $('#rawText').textContent=text;
-    state.draft=parseOcr(text);
+    });
+
+    $('#progressBar').style.width='55%';
+    $('#progressText').textContent='Reading table positions and text...';
+
+    // Upscale the photo before OCR. This helps with small technical tags.
+    const bitmap=await createImageBitmap(file);
+    const scale=Math.min(2.5, Math.max(1.5, 2200/Math.max(bitmap.width,1)));
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.round(bitmap.width*scale);
+    canvas.height=Math.round(bitmap.height*scale);
+    const ctx=canvas.getContext('2d',{willReadFrequently:false});
+    ctx.imageSmoothingEnabled=true;
+    ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+    bitmap.close?.();
+
+    const [result]=await ocr.predict(canvas,{
+      textDetLimitSideLen:2200,
+      textRecScoreThresh:0.15
+    });
+
+    const items=result?.items||[];
+    const raw=items
+      .map(it=>{
+        const b=itemBox(it);
+        return `${it.text}   [x:${Math.round(b.cx)}, y:${Math.round(b.cy)}, score:${Math.round((it.score||0)*100)}%]`;
+      }).join('\n');
+
+    $('#rawText').textContent=raw||'No text detected.';
+    $('#progressBar').style.width='85%';
+    $('#progressText').textContent='Building table rows from OCR positions...';
+
+    state.draft=parsePositionedOcr(items, canvas.width);
+
+    // Fallback to text parser if the image has too few usable positioned rows.
     if(!state.draft.length){
-      toast('OCR finished, but rows could not be identified automatically. Check raw OCR text and add rows manually.');
+      const plain=items.map(x=>x.text).join('\n');
+      state.draft=parseOcr(plain);
+    }
+
+    const plainText=items.map(x=>x.text).join(' ');
+    const scheduleInfo=inferScheduleInfo(plainText,state.draft);
+    setScheduleInfo(scheduleInfo);
+
+    // Apply detected common schedule information only when it is actually detected.
+    if(scheduleInfo.towerNo || scheduleInfo.level || scheduleInfo.tower){
+      state.draft.forEach(r=>{
+        if(scheduleInfo.towerNo) r.towerNo=scheduleInfo.towerNo;
+        if(scheduleInfo.level) r.level=scheduleInfo.level;
+        if(scheduleInfo.tower) r.tower=scheduleInfo.tower;
+      });
+    }
+
+    if(!state.draft.length){
+      toast('AI OCR completed, but no table rows were identified. Try a straighter, clearer photo.');
       state.draft=[{sl:'1',module:'',tag:'',towerNo:'',level:'',tower:''}];
-    } else toast(`Found ${state.draft.length} row(s). Please review before saving.`);
-    renderDraft();$('#reviewCard').classList.remove('hidden');$('#reviewCard').scrollIntoView({behavior:'smooth'});
-    $('#ocrStatus').textContent='OCR completed. Review the extracted data below.';
+    }else{
+      toast(`AI OCR found ${state.draft.length} row(s). Please review before saving.`);
+    }
+
+    $('#progressBar').style.width='100%';
+    renderDraft();
+    $('#reviewCard').classList.remove('hidden');
+    $('#reviewCard').scrollIntoView({behavior:'smooth'});
+    $('#ocrStatus').textContent='AI OCR completed. Review the extracted data below.';
   }catch(err){
-    console.error(err);toast('OCR failed. Try a clearer photo or check your internet connection.');$('#ocrStatus').textContent='OCR failed. Try again with a clearer image.';
-  }finally{btn.disabled=false;$('#progressWrap').classList.add('hidden')}
+    console.error(err);
+    $('#ocrStatus').textContent='AI OCR failed to load or process the photo. Check your internet connection and try again.';
+    toast('AI OCR failed. Try again or use a clearer photo.');
+  }finally{
+    try{ocr?.dispose?.()}catch(e){}
+    btn.disabled=false;
+    setTimeout(()=>$('#progressWrap').classList.add('hidden'),500);
+  }
 };
+$('#applyScheduleInfo').onclick=()=>{applyScheduleInfo();toast('Schedule information applied to all rows.')};
 $('#addRow').onclick=()=>{state.draft.push({sl:String(state.draft.length+1),module:'',tag:'',towerNo:'',level:'',tower:''});renderDraft()};
 $('#clearDraft').onclick=()=>{state.draft=[];renderDraft()};
 $('#saveBtn').onclick=()=>{
   let added=0,dupe=0;
+  const scheduleTowerNo=$('#scheduleTowerNo').value.trim().toUpperCase();
+  const scheduleLevel=$('#scheduleLevel').value.trim().toUpperCase();
+  const scheduleTower=$('#scheduleTower').value.trim().toUpperCase();
   state.draft.forEach(r=>{
     if(!r.tag)return;
-    r.tag=normalizeTag(r.tag);let p=parseTag(r.tag);r.towerNo=p.towerNo||r.towerNo;r.level=p.level||r.level;
+    r.tag=normalizeTag(r.tag);let p=parseTag(r.tag);
+    r.towerNo=scheduleTowerNo||p.towerNo||r.towerNo;
+    r.level=scheduleLevel||p.level||r.level;
+    r.tower=scheduleTower||r.tower;
     let exists=state.db.some(x=>x.towerNo===r.towerNo&&x.level===r.level&&x.tag===r.tag&&x.tower===r.tower);
     if(exists)dupe++;else{state.db.push({...r,saved:new Date().toLocaleString()});added++}
   });

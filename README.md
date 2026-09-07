@@ -1,18 +1,14 @@
-# ModuleScan - Free OCR Version
+# ModuleScan – Free AI OCR Edition
 
-This version uses Tesseract.js in the browser, so no OpenAI API key or paid API credits are required.
+This version uses the official PaddleOCR.js browser SDK and runs OCR in the user's browser.
 
-Features:
-- Take/upload a photo on mobile
-- Free browser OCR
-- Qty ignored
-- Parses A02 as Tower No.
-- Parses L38 as Level
-- Keeps original Tower column
-- Review/edit before save
-- Duplicate checking
-- Browser storage
-- Search/filter
-- CSV export
+## Deploy on Vercel
+1. Upload these files to the GitHub repository (replace the existing project).
+2. In Vercel, import/redeploy the repository.
+3. Vercel should detect Vite automatically.
+4. Build command: `npm run build`
+5. Output directory: `dist`
 
-Important: OCR accuracy depends on image quality. Always review Tags before saving.
+No paid OCR API key is required.
+
+The first OCR run may take longer because the OCR model and browser runtime are loaded on demand.
