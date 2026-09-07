@@ -1,3 +1,7 @@
+# ModuleScan Free OCR v8.1
+
+This build fixes the missing technical error panel: OCR diagnostics now appear directly below the Extract Data section, even when OCR fails before the Review Extracted Data card opens.
+
 # ModuleScan v8 — PaddleOCR main-thread diagnostic build
 
 This version changes OCR startup to the simplest official PaddleOCR browser flow:

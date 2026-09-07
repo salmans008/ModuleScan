@@ -56,6 +56,16 @@
           <div class="progress-wrap hidden" id="progressWrap"><div class="progress"><div id="progressBar"></div></div><span id="progressText">Preparing OCR...</span></div>
         </div>
         <button class="primary" id="extractBtn">Extract Data →</button>
+
+        <!-- Always-visible location for OCR diagnostics. This is intentionally
+             outside Review Extracted Data so errors are visible even when OCR
+             fails before the review card is opened. -->
+        <div id="diagnosticBox" class="diagnostic-box hidden">
+          <h3>Technical Error Details</h3>
+          <p class="muted">If OCR fails, copy this information or send a screenshot.</p>
+          <pre id="diagnosticText"></pre>
+          <button id="copyDiagnostic" class="secondary">Copy Technical Error</button>
+        </div>
       </div>
 
       <div class="card hidden" id="reviewCard">
@@ -85,12 +95,6 @@
             <thead><tr><th>Sl. Number</th><th>Module Details</th><th>Tag</th><th>Tower No.</th><th>Level</th><th>Tower</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
-        </div>
-        <div id="diagnosticBox" class="diagnostic-box hidden">
-          <h3>Technical Error Details</h3>
-          <p class="muted">If OCR fails, copy this information or send a screenshot.</p>
-          <pre id="diagnosticText"></pre>
-          <button id="copyDiagnostic" class="secondary">Copy Technical Error</button>
         </div>
         <details class="ocr-details"><summary>Show raw OCR text</summary><pre id="rawText"></pre></details>
         <div class="actions"><button class="secondary" id="clearDraft">Clear</button><button class="primary" id="saveBtn">Save to Database</button></div>
