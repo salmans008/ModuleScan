@@ -19,3 +19,7 @@ This version:
 
 ## Deploy
 Replace all repository files with this package, commit to `main`, and let Vercel redeploy.
+
+
+## v10 fix
+Technical Error Details is now outside the hidden Review Extracted Data card, so OCR startup failures are always visible immediately below the Extract Module Data section. The page automatically scrolls to the diagnostic box when OCR fails.

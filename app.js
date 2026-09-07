@@ -472,6 +472,8 @@ $('#extractBtn').onclick=async()=>{
     $('#ocrStatus').textContent=`AI OCR failed during ${stage}. The full technical error is shown below.`;
     $('#rawText').textContent=`Technical error at ${stage}:\n\n${detail}`;
     showDiagnostic(stage,err);
+    const diagnosticBox=$('#diagnosticBox');
+    if(diagnosticBox) diagnosticBox.scrollIntoView({behavior:'smooth',block:'center'});
     const hint=$('#diagnosticHint');
     if(hint) hint.textContent='This version uses an explicit WASM runtime path. If it still fails, send this complete error message.';
     toast('AI OCR failed. Full technical error is now displayed.');
