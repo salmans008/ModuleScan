@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ModuleScan | Photo Data Extractor</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><div class="logo">M</div><span>ModuleScan</span></div>
+    <nav>
+      <button class="nav active" data-page="upload">📷 <span>Upload & Extract</span></button>
+      <button class="nav" data-page="database">▦ <span>Module Database</span></button>
+      <button class="nav" data-page="export">⇩ <span>Export Data</span></button>
+    </nav>
+    <div class="sidebar-footer">Module Tracking System<br><small>v1.0</small></div>
+  </aside>
+
+  <main>
+    <header>
+      <div><h1 id="pageTitle">Upload & Extract</h1><p id="pageSubtitle">Upload a module schedule photo and convert it into structured data.</p></div>
+      <div class="badge">● Ready</div>
+    </header>
+
+    <section id="upload" class="page active-page">
+      <div class="grid">
+        <div class="card upload-card">
+          <h2>Upload Photo</h2>
+          <p class="muted">Upload JPG, PNG or WEBP. The Qty column will be ignored.</p>
+          <label class="dropzone" id="dropzone">
+            <input type="file" id="photoInput" accept="image/*" hidden>
+            <div class="upload-icon">↑</div>
+            <strong>Drop your photo here</strong>
+            <span>or tap to browse from your phone</span>
+            <small>JPG, PNG, WEBP</small>
+          </label>
+          <div id="previewWrap" class="preview-wrap hidden">
+            <img id="preview" alt="Uploaded preview">
+            <button class="secondary" id="removePhoto">Remove photo</button>
+          </div>
+        </div>
+
+        <div class="card workflow">
+          <h2>Automatic extraction</h2>
+          <div class="step"><b>1</b><div><strong>Read table</strong><span>AI/OCR reads rows from the uploaded image.</span></div></div>
+          <div class="step"><b>2</b><div><strong>Ignore Qty</strong><span>Quantity is never stored.</span></div></div>
+          <div class="step"><b>3</b><div><strong>Parse Tag</strong><span>A02 → Tower No. and L38 → Level.</span></div></div>
+          <div class="step"><b>4</b><div><strong>Review & Save</strong><span>Edit results before adding them to the database.</span></div></div>
+        </div>
+      </div>
+
+      <div class="card extract-card">
+        <div><h2>Extract Module Data</h2><p class="muted">For this prototype, add or edit the rows manually after upload. Connect OCR/AI to automate extraction.</p></div>
+        <button class="primary" id="extractBtn">Extract Data →</button>
+      </div>
+
+      <div class="card hidden" id="reviewCard">
+        <div class="section-head">
+          <div><h2>Review Extracted Data</h2><p class="muted">Tower No. and Level are automatically parsed from the Tag.</p></div>
+          <button class="secondary" id="addRow">+ Add Row</button>
+        </div>
+        <div class="table-wrap">
+          <table id="draftTable">
+            <thead><tr><th>Sl. Number</th><th>Module Details</th><th>Tag</th><th>Tower No.</th><th>Level</th><th>Tower</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="actions"><button class="secondary" id="clearDraft">Clear</button><button class="primary" id="saveBtn">Save to Database</button></div>
+      </div>
+    </section>
+
+    <section id="database" class="page">
+      <div class="stats">
+        <div class="stat"><span>Total Records</span><strong id="totalRecords">0</strong></div>
+        <div class="stat"><span>Unique Tower Nos.</span><strong id="towerCount">0</strong></div>
+        <div class="stat"><span>Unique Levels</span><strong id="levelCount">0</strong></div>
+      </div>
+      <div class="card">
+        <div class="section-head"><div><h2>Module Database</h2><p class="muted">All saved records are stored in this browser for the prototype.</p></div><button class="danger" id="clearDb">Clear Database</button></div>
+        <div class="filters">
+          <input id="searchInput" placeholder="Search Tag or Module Details">
+          <input id="towerFilter" placeholder="Tower No. e.g. A02">
+          <input id="levelFilter" placeholder="Level e.g. L38">
+          <input id="towerColFilter" placeholder="Tower e.g. C">
+        </div>
+        <div class="table-wrap"><table id="dbTable"><thead><tr><th>Sl. Number</th><th>Module Details</th><th>Tag</th><th>Tower No.</th><th>Level</th><th>Tower</th><th>Saved</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="export" class="page">
+      <div class="card export-card">
+        <div class="export-icon">⇩</div>
+        <h2>Export Module Data</h2>
+        <p>Download all saved module records as a CSV file that opens directly in Microsoft Excel.</p>
+        <button class="primary" id="exportBtn">Download CSV</button>
+      </div>
+    </section>
+
+    <div id="toast"></div>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
